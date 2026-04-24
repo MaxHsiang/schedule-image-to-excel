@@ -248,8 +248,6 @@ class ScheduleParser:
 
                     if key in matched_cells:
                         continue
-                    if key in occupied_cells and occupied_cells[key] != target_name:
-                        continue
 
                     sample = self._cell_mean_bgr(image, cell_row, cell_col, verticals, horizontals)
                     if sample is None:
