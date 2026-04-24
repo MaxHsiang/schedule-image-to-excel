@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 from bisect import bisect_right
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from typing import Dict, List, Sequence, Tuple
 
@@ -452,6 +452,17 @@ def default_output_path(image_path: Path, employee_name: str) -> Path:
     return image_path.with_name(f"{image_path.stem}_{safe_name}_個人班表.xlsx")
 
 
+def timestamped_output_path(source_path: Path, employee_name: str, records: Sequence[ShiftRecord]) -> Path:
+    safe_name = employee_name.replace("/", "_").replace("\\", "_")
+    stamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    if records:
+        first = records[0]
+        filename = f"{first.year}{first.month:02d}月份班表_{safe_name}_{stamp}.xlsx"
+    else:
+        filename = f"{source_path.stem}_{safe_name}_{stamp}.xlsx"
+    return source_path.with_name(filename)
+
+
 def run_conversion(
     image_path: Path,
     employee_name: str,
@@ -459,7 +470,7 @@ def run_conversion(
 ) -> Tuple[Path, List[ShiftRecord]]:
     parser = ScheduleParser()
     records = parser.parse(image_path=image_path, employee_name=employee_name)
-    final_output = output_path or default_output_path(Path(image_path), employee_name)
+    final_output = output_path or timestamped_output_path(Path(image_path), employee_name, records)
     saved_path = export_to_excel(records=records, employee_name=employee_name, output_path=final_output)
     return saved_path, records
 
@@ -471,7 +482,7 @@ def run_conversion_debug(
 ) -> Tuple[Path, List[ShiftRecord], dict]:
     parser = ScheduleParser()
     records = parser.parse(image_path=image_path, employee_name=employee_name)
-    final_output = output_path or default_output_path(Path(image_path), employee_name)
+    final_output = output_path or timestamped_output_path(Path(image_path), employee_name, records)
     saved_path = export_to_excel(records=records, employee_name=employee_name, output_path=final_output)
     return saved_path, records, parser.last_debug
 

@@ -11,10 +11,11 @@ import uvicorn
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 
-from schedule_core import default_output_path, records_to_dicts, run_conversion_debug
+from schedule_core import records_to_dicts, run_conversion_debug
+from schedule_excel_parser import run_excel_conversion_debug
 
 
-APP_VERSION = "debug-preview-v4-ce494c8"
+APP_VERSION = "excel-source-v1"
 
 
 app = FastAPI(title="班表圖片轉 Excel")
@@ -154,7 +155,7 @@ HTML_PAGE = """<!doctype html>
     <div class="grid">
       <label>
         上傳班表圖片
-        <input id="imageInput" type="file" accept=".png,.jpg,.jpeg,.bmp">
+        <input id="imageInput" type="file" accept=".png,.jpg,.jpeg,.bmp,.xlsx">
       </label>
 
       <label>
@@ -310,9 +311,11 @@ async def convert(
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
             input_path = temp_path / f"upload{suffix}"
-            output_path = default_output_path(input_path, name)
             input_path.write_bytes(raw)
-            saved_path, records, debug = run_conversion_debug(input_path, name, output_path)
+            if suffix.lower() == ".xlsx":
+                saved_path, records, debug = run_excel_conversion_debug(input_path, name, None)
+            else:
+                saved_path, records, debug = run_conversion_debug(input_path, name, None)
 
             if mode == "preview":
                 return JSONResponse(
