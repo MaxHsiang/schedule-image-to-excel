@@ -431,3 +431,17 @@ def run_conversion(
     final_output = output_path or default_output_path(Path(image_path), employee_name)
     saved_path = export_to_excel(records=records, employee_name=employee_name, output_path=final_output)
     return saved_path, records
+
+def records_to_dicts(records: Sequence[ShiftRecord]) -> List[dict]:
+    return [
+        {
+            "year": record.year,
+            "month": record.month,
+            "day": record.day,
+            "weekday": record.weekday,
+            "shift": record.shift,
+            "hours": record.hours,
+        }
+        for record in records
+    ]
+
