@@ -1,0 +1,11 @@
+build/
+dist/
+pyi_runtime/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.spec
+*.exe
+*.pkg
+*.xlsx
