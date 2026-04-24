@@ -208,7 +208,8 @@ class ScheduleParser:
                 continue
 
             normalized_name = self._normalize_name(text)
-            occupied_cells[(cell_row, cell_col)] = normalized_name
+            if self._looks_like_person_name(normalized_name):
+                occupied_cells[(cell_row, cell_col)] = normalized_name
             if normalized_name != target_name:
                 continue
 
@@ -333,6 +334,11 @@ class ScheduleParser:
     def _normalize_name(self, text: str) -> str:
         normalized = self._normalize_text(text)
         return NAME_VARIANTS.get(normalized, normalized)
+
+    def _looks_like_person_name(self, text: str) -> bool:
+        if not 2 <= len(text) <= 4:
+            return False
+        return all("\u4e00" <= char <= "\u9fff" for char in text)
 
 
 def export_to_excel(records: Sequence[ShiftRecord], employee_name: str, output_path: Path) -> Path:
