@@ -29,8 +29,8 @@ SHIFT_CELL_FILLS = {
 }
 WEEKDAY_MAP = "一二三四五六日"
 NAME_VARIANTS = {
-    "张盈慧": "張盈慧",
     "張盈慧": "張盈慧",
+    "张盈慧": "張盈慧",
 }
 
 
@@ -50,11 +50,16 @@ class ScheduleParser:
 
     def parse(self, image_path: Path, employee_name: str) -> List[ShiftRecord]:
         image_path = Path(image_path)
+        image = cv2.imread(str(image_path))
+        if image is None:
+            raise ValueError("圖片讀取失敗。")
+
         ocr_results = self._run_ocr(image_path)
         year, month = self._extract_year_month(ocr_results)
-        verticals, horizontals = self._detect_grid_lines(image_path)
+        verticals, horizontals = self._detect_grid_lines_from_image(image)
         date_cells = self._collect_dates(ocr_results, year, month, verticals, horizontals)
         return self._collect_records(
+            image=image,
             ocr_results=ocr_results,
             employee_name=employee_name,
             date_cells=date_cells,
@@ -73,7 +78,6 @@ class ScheduleParser:
             raise ValueError("OCR 回傳格式不正確。")
 
         first, second, third = item[0], item[1], item[2]
-
         if isinstance(second, str):
             box = first
             text = second
@@ -98,11 +102,7 @@ class ScheduleParser:
                 return int(match.group(1)), int(match.group(2))
         raise ValueError("無法從圖片標題辨識出年份與月份。")
 
-    def _detect_grid_lines(self, image_path: Path) -> Tuple[List[int], List[int]]:
-        image = cv2.imread(str(image_path))
-        if image is None:
-            raise ValueError("圖片讀取失敗。")
-
+    def _detect_grid_lines_from_image(self, image) -> Tuple[List[int], List[int]]:
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         dark_mask = gray < 180
         col_counts = dark_mask.sum(axis=0)
@@ -120,7 +120,6 @@ class ScheduleParser:
 
         if len(verticals) < 9 or len(horizontals) < 10:
             raise ValueError("無法穩定抓到班表格線，請使用完整正拍的班表圖片。")
-
         return verticals, horizontals
 
     def _group_lines(self, values: Sequence[int], gap: int = 2) -> List[int]:
@@ -182,6 +181,7 @@ class ScheduleParser:
 
     def _collect_records(
         self,
+        image,
         ocr_results,
         employee_name: str,
         date_cells: Dict[Tuple[int, int], date],
@@ -190,14 +190,13 @@ class ScheduleParser:
     ) -> List[ShiftRecord]:
         target_name = self._normalize_name(employee_name)
         records: List[ShiftRecord] = []
+        matched_cells = set()
+        occupied_cells: Dict[Tuple[int, int], str] = {}
+        target_samples: List[Tuple[float, float, float]] = []
 
         for item in ocr_results:
             box, text, score = self._parse_ocr_item(item)
             if score < 0.72:
-                continue
-
-            normalized_name = self._normalize_name(text)
-            if normalized_name != target_name:
                 continue
 
             cell_col, cell_row = self._locate_cell(box, verticals, horizontals)
@@ -206,6 +205,11 @@ class ScheduleParser:
 
             shift_index = (cell_row - 2) % 4
             if shift_index not in (0, 1, 2):
+                continue
+
+            normalized_name = self._normalize_name(text)
+            occupied_cells[(cell_row, cell_col)] = normalized_name
+            if normalized_name != target_name:
                 continue
 
             date_row = cell_row - shift_index - 1
@@ -224,12 +228,83 @@ class ScheduleParser:
                     hours=SHIFT_HOURS[shift],
                 )
             )
+            matched_cells.add((cell_row, cell_col))
+
+            sample = self._cell_mean_bgr(image, cell_row, cell_col, verticals, horizontals)
+            if sample is not None:
+                target_samples.append(sample)
+
+        if target_samples:
+            prototype = tuple(sum(v) / len(v) for v in zip(*target_samples))
+            for (date_row, cell_col), work_date in date_cells.items():
+                for offset, shift in enumerate(("早", "午", "晚"), start=1):
+                    cell_row = date_row + offset
+                    key = (cell_row, cell_col)
+
+                    if key in matched_cells:
+                        continue
+                    if key in occupied_cells and occupied_cells[key] != target_name:
+                        continue
+
+                    sample = self._cell_mean_bgr(image, cell_row, cell_col, verticals, horizontals)
+                    if sample is None:
+                        continue
+                    if self._is_target_color(sample, prototype):
+                        records.append(
+                            ShiftRecord(
+                                year=work_date.year,
+                                month=work_date.month,
+                                day=work_date.day,
+                                weekday=WEEKDAY_MAP[work_date.weekday()],
+                                shift=shift,
+                                hours=SHIFT_HOURS[shift],
+                            )
+                        )
+                        matched_cells.add(key)
 
         if not records:
             raise ValueError(f"找不到 {employee_name} 的班次。")
 
-        records.sort(key=lambda item: (item.year, item.month, item.day, SHIFT_ORDER[item.shift]))
-        return records
+        dedup = {}
+        for record in records:
+            dedup[(record.year, record.month, record.day, record.shift)] = record
+
+        final_records = list(dedup.values())
+        final_records.sort(key=lambda item: (item.year, item.month, item.day, SHIFT_ORDER[item.shift]))
+        return final_records
+
+    def _cell_mean_bgr(
+        self,
+        image,
+        cell_row: int,
+        cell_col: int,
+        verticals: Sequence[int],
+        horizontals: Sequence[int],
+    ) -> Tuple[float, float, float] | None:
+        if cell_col + 1 >= len(verticals) or cell_row + 1 >= len(horizontals):
+            return None
+
+        x1, x2 = int(verticals[cell_col]), int(verticals[cell_col + 1])
+        y1, y2 = int(horizontals[cell_row]), int(horizontals[cell_row + 1])
+        pad_x = max(4, (x2 - x1) // 6)
+        pad_y = max(4, (y2 - y1) // 6)
+        roi = image[y1 + pad_y : y2 - pad_y, x1 + pad_x : x2 - pad_x]
+        if roi.size == 0:
+            return None
+        mean = roi.mean(axis=(0, 1))
+        return float(mean[0]), float(mean[1]), float(mean[2])
+
+    def _is_target_color(
+        self,
+        sample_bgr: Tuple[float, float, float],
+        target_bgr: Tuple[float, float, float],
+    ) -> bool:
+        sb, sg, sr = sample_bgr
+        tb, tg, tr = target_bgr
+        distance = ((sb - tb) ** 2 + (sg - tg) ** 2 + (sr - tr) ** 2) ** 0.5
+        brightness = (sb + sg + sr) / 3
+        green_bias = sg - max(sb, sr)
+        return distance < 65 and brightness < 235 and green_bias > 8
 
     def _locate_cell(
         self,
@@ -285,7 +360,6 @@ def export_to_excel(records: Sequence[ShiftRecord], employee_name: str, output_p
 
     sheet.freeze_panes = "A2"
     sheet.sheet_view.showGridLines = False
-    # 明確關掉 Excel 自動篩選。
     sheet.auto_filter.ref = None
 
     title_fill = PatternFill("solid", fgColor="2F6B53")
@@ -320,7 +394,6 @@ def export_to_excel(records: Sequence[ShiftRecord], employee_name: str, output_p
     for row_index in range(3, sheet.max_row + 1):
         shift_value = sheet[f"E{row_index}"].value
         row_fill = SHIFT_ROW_FILLS.get(shift_value)
-
         for cell in sheet[row_index]:
             cell.border = border
             cell.alignment = Alignment(horizontal="center", vertical="center")
