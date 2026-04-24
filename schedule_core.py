@@ -320,7 +320,20 @@ class ScheduleParser:
         distance = ((sb - tb) ** 2 + (sg - tg) ** 2 + (sr - tr) ** 2) ** 0.5
         brightness = (sb + sg + sr) / 3
         green_bias = sg - max(sb, sr)
-        return distance < 65 and brightness < 235 and green_bias > 8
+        green_over_red = sg - sr
+        green_over_blue = sg - sb
+
+        # Absolute green-fill rule for 張盈慧 cells.
+        is_green_fill = (
+            120 <= brightness <= 210
+            and sg >= 170
+            and green_over_red >= 20
+            and green_over_blue >= 15
+        )
+
+        # Keep a looser prototype-based fallback so local OCR samples can still help.
+        is_like_prototype = distance < 90 and brightness < 235 and green_bias > 10
+        return is_green_fill or is_like_prototype
 
     def _locate_cell(
         self,
