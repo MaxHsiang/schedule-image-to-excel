@@ -27,7 +27,7 @@ HTML_PAGE = """<!doctype html>
     :root {
       --bg1: #f3fbff;
       --bg2: #fff7ea;
-      --card: rgba(255,255,255,.92);
+      --card: rgba(255, 255, 255, .92);
       --line: #d9e7e1;
       --text: #17322a;
       --muted: #567168;
@@ -49,9 +49,9 @@ HTML_PAGE = """<!doctype html>
       padding: 24px;
     }
     .card {
-      width: min(900px, 100%);
+      width: min(980px, 100%);
       background: var(--card);
-      border: 1px solid rgba(255,255,255,.7);
+      border: 1px solid rgba(255, 255, 255, .7);
       box-shadow: 0 18px 50px rgba(34, 71, 58, .12);
       border-radius: 24px;
       padding: 28px;
@@ -66,7 +66,7 @@ HTML_PAGE = """<!doctype html>
       border-radius: 14px;
       padding: 14px 16px;
       font: inherit;
-      background: rgba(255,255,255,.96);
+      background: rgba(255, 255, 255, .96);
     }
     .actions {
       display: flex;
@@ -104,7 +104,7 @@ HTML_PAGE = """<!doctype html>
       padding: 18px;
       border: 1px solid var(--line);
       border-radius: 18px;
-      background: rgba(255,255,255,.78);
+      background: rgba(255, 255, 255, .78);
     }
     .preview[hidden] { display: none; }
     .preview h2 {
@@ -150,7 +150,7 @@ HTML_PAGE = """<!doctype html>
 
       <label>
         姓名
-        <input id="nameInput" type="text" value="張盈慧" placeholder="請輸入要擷取的姓名">
+        <input id="nameInput" type="text" value="張盈慧" placeholder="請輸入員工姓名">
       </label>
     </div>
 
@@ -194,7 +194,7 @@ HTML_PAGE = """<!doctype html>
       }
 
       status.className = "status";
-      status.textContent = mode === "preview" ? "正在辨識班表，請稍候..." : "正在辨識並生成 Excel，請稍候...";
+      status.textContent = mode === "preview" ? "正在預覽辨識結果，請稍候..." : "正在產生 Excel，請稍候...";
 
       const response = await fetch(`/convert?name=${encodeURIComponent(employeeName)}&mode=${mode}`, {
         method: "POST",
@@ -233,10 +233,10 @@ HTML_PAGE = """<!doctype html>
         URL.revokeObjectURL(url);
 
         status.className = "status ok";
-        status.textContent = "Excel 已生成並開始下載。";
+        status.textContent = "Excel 已下載完成。";
       } catch (error) {
         status.className = "status error";
-        status.textContent = error.message || "轉換失敗。";
+        status.textContent = error.message || "轉換失敗";
       }
     }
 
@@ -261,7 +261,7 @@ HTML_PAGE = """<!doctype html>
       } catch (error) {
         previewBox.hidden = true;
         status.className = "status error";
-        status.textContent = error.message || "預覽失敗。";
+        status.textContent = error.message || "預覽失敗";
       }
     });
 

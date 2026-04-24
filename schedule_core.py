@@ -29,8 +29,8 @@ SHIFT_CELL_FILLS = {
 }
 WEEKDAY_MAP = "一二三四五六日"
 NAME_VARIANTS = {
-    "張盈慧": "張盈慧",
     "张盈慧": "張盈慧",
+    "張盈慧": "張盈慧",
 }
 
 
@@ -75,7 +75,7 @@ class ScheduleParser:
 
     def _parse_ocr_item(self, item) -> Tuple[Sequence[Sequence[float]], str, float]:
         if not isinstance(item, (list, tuple)) or len(item) < 3:
-            raise ValueError("OCR 回傳格式不正確。")
+            raise ValueError("OCR 回傳格式異常。")
 
         first, second, third = item[0], item[1], item[2]
         if isinstance(second, str):
@@ -176,7 +176,7 @@ class ScheduleParser:
             date_cells[(cell_row, cell_col)] = date(year, month, dd)
 
         if not date_cells:
-            raise ValueError("沒有辨識到任何日期欄位。")
+            raise ValueError("沒有辨識到日期列。")
         return date_cells
 
     def _collect_records(
@@ -265,7 +265,7 @@ class ScheduleParser:
         if not records:
             raise ValueError(f"找不到 {employee_name} 的班次。")
 
-        dedup = {}
+        dedup: Dict[Tuple[int, int, int, str], ShiftRecord] = {}
         for record in records:
             dedup[(record.year, record.month, record.day, record.shift)] = record
 
@@ -291,6 +291,7 @@ class ScheduleParser:
         roi = image[y1 + pad_y : y2 - pad_y, x1 + pad_x : x2 - pad_x]
         if roi.size == 0:
             return None
+
         mean = roi.mean(axis=(0, 1))
         return float(mean[0]), float(mean[1]), float(mean[2])
 
@@ -326,8 +327,7 @@ class ScheduleParser:
             .replace("（", "(")
             .replace("）", ")")
             .replace(" ", "")
-            .replace("月份", "/")
-            .replace("排班表", "")
+            .replace("\\", "/")
         )
 
     def _normalize_name(self, text: str) -> str:
@@ -432,6 +432,7 @@ def run_conversion(
     saved_path = export_to_excel(records=records, employee_name=employee_name, output_path=final_output)
     return saved_path, records
 
+
 def records_to_dicts(records: Sequence[ShiftRecord]) -> List[dict]:
     return [
         {
@@ -444,4 +445,3 @@ def records_to_dicts(records: Sequence[ShiftRecord]) -> List[dict]:
         }
         for record in records
     ]
-
