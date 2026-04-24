@@ -14,7 +14,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response
 from schedule_core import default_output_path, records_to_dicts, run_conversion_debug
 
 
-APP_VERSION = "debug-preview-v1"
+APP_VERSION = "debug-preview-v4-ce494c8"
 
 
 app = FastAPI(title="班表圖片轉 Excel")
