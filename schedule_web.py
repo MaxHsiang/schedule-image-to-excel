@@ -13,9 +13,10 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response
 
 from schedule_core import records_to_dicts, run_conversion_debug
 from schedule_excel_parser import run_excel_conversion_debug
+from schedule_text_parser import run_text_conversion_debug
 
 
-APP_VERSION = "excel-source-v2-headerfix"
+APP_VERSION = "excel-text-v1"
 
 
 app = FastAPI(title="班表圖片轉 Excel")
@@ -145,6 +146,35 @@ HTML_PAGE = """<!doctype html>
       font-size: 14px;
       line-height: 1.7;
     }
+    textarea {
+      width: 100%;
+      min-height: 220px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 14px 16px;
+      font: inherit;
+      line-height: 1.55;
+      background: rgba(255, 255, 255, .96);
+      resize: vertical;
+    }
+    .table-preview {
+      margin-top: 16px;
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: rgba(255,255,255,.86);
+    }
+    .table-preview table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+    .table-preview td {
+      border: 1px solid #d9e7e1;
+      padding: 8px 10px;
+      text-align: center;
+      white-space: nowrap;
+    }
   </style>
 </head>
 <body>
@@ -162,6 +192,11 @@ HTML_PAGE = """<!doctype html>
         姓名
         <input id="nameInput" type="text" value="張盈慧" placeholder="請輸入員工姓名">
       </label>
+
+      <label>
+        或直接貼上班表文字
+        <textarea id="textInput" placeholder="可直接貼上從 Excel 複製出來的班表文字，系統會先編排成表格，再抓出指定員工班表。"></textarea>
+      </label>
     </div>
 
     <div class="actions">
@@ -177,6 +212,7 @@ HTML_PAGE = """<!doctype html>
       <p id="previewCount" class="count"></p>
       <div id="previewList" class="preview-list"></div>
       <div id="debugInfo" class="debug"></div>
+      <div id="tablePreview" class="table-preview" hidden></div>
       <div class="download-row">
         <button id="downloadBtn" type="button" class="secondary">確認並下載 Excel</button>
       </div>
@@ -194,27 +230,41 @@ HTML_PAGE = """<!doctype html>
     const previewCount = document.getElementById("previewCount");
     const previewList = document.getElementById("previewList");
     const debugInfo = document.getElementById("debugInfo");
+    const textInput = document.getElementById("textInput");
+    const tablePreview = document.getElementById("tablePreview");
 
     async function sendRequest(mode) {
       const file = imageInput.files[0];
       const employeeName = (nameInput.value || "張盈慧").trim();
+      const pastedText = (textInput.value || "").trim();
 
-      if (!file) {
+      if (!file && !pastedText) {
         status.className = "status error";
-        status.textContent = "請先選擇班表圖片。";
+        status.textContent = "請先選擇班表檔案，或貼上班表文字。";
         return null;
       }
 
       status.className = "status";
       status.textContent = mode === "preview" ? "正在預覽辨識結果，請稍候..." : "正在產生 Excel，請稍候...";
 
+      const headers = {};
+      let body;
+
+      if (pastedText) {
+        headers["Content-Type"] = "text/plain;charset=utf-8";
+        headers["X-Input-Mode"] = "pasted-text";
+        headers["X-Filename"] = "pasted_schedule.txt";
+        body = pastedText;
+      } else {
+        headers["Content-Type"] = file.type || "application/octet-stream";
+        headers["X-Filename"] = encodeURIComponent(file.name);
+        body = await file.arrayBuffer();
+      }
+
       const response = await fetch(`/convert?name=${encodeURIComponent(employeeName)}&mode=${mode}`, {
         method: "POST",
-        headers: {
-          "Content-Type": file.type || "application/octet-stream",
-          "X-Filename": encodeURIComponent(file.name),
-        },
-        body: await file.arrayBuffer(),
+        headers,
+        body,
       });
 
       if (!response.ok) {
@@ -270,6 +320,24 @@ HTML_PAGE = """<!doctype html>
         const debug = data.debug || {};
         debugInfo.textContent = `版本：${data.version} ｜ OCR先抓到：${debug.ocr_direct_matches ?? "-"} ｜ 顏色補抓：${debug.color_fallback_matches ?? "-"} ｜ 總筆數：${debug.deduped_total ?? data.count}`;
 
+        if (Array.isArray(data.table_rows) && data.table_rows.length) {
+          const tableHtml = [
+            "<table><tbody>",
+            ...data.table_rows.map(
+              (row) =>
+                "<tr>" +
+                row.map((cell) => `<td>${String(cell ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")}</td>`).join("") +
+                "</tr>"
+            ),
+            "</tbody></table>",
+          ].join("");
+          tablePreview.innerHTML = tableHtml;
+          tablePreview.hidden = false;
+        } else {
+          tablePreview.innerHTML = "";
+          tablePreview.hidden = true;
+        }
+
         previewBox.hidden = false;
         status.className = "status ok";
         status.textContent = "已完成預覽，請確認班次內容。";
@@ -303,6 +371,7 @@ async def convert(
     if not raw:
         raise HTTPException(status_code=400, detail="沒有收到圖片內容。")
 
+    input_mode = request.headers.get("X-Input-Mode", "file")
     filename_header = request.headers.get("X-Filename", "schedule.jpg")
     safe_original_name = Path(request.headers.get("X-Filename", "schedule.jpg")).name or "schedule.jpg"
     try:
@@ -317,21 +386,26 @@ async def convert(
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
             input_path = temp_path / f"upload{suffix}"
-            input_path.write_bytes(raw)
-            if suffix.lower() == ".xlsx":
-                saved_path, records, debug = run_excel_conversion_debug(input_path, name, None)
+            if input_mode == "pasted-text":
+                text = raw.decode("utf-8")
+                saved_path, records, debug = run_text_conversion_debug(text, name, None)
             else:
-                saved_path, records, debug = run_conversion_debug(input_path, name, None)
+                input_path.write_bytes(raw)
+                if suffix.lower() == ".xlsx":
+                    saved_path, records, debug = run_excel_conversion_debug(input_path, name, None)
+                else:
+                    saved_path, records, debug = run_conversion_debug(input_path, name, None)
 
             if mode == "preview":
-                return JSONResponse(
-                    {
-                        "count": len(records),
-                        "records": records_to_dicts(records),
-                        "debug": debug,
-                        "version": APP_VERSION,
-                    }
-                )
+                payload = {
+                    "count": len(records),
+                    "records": records_to_dicts(records),
+                    "debug": debug,
+                    "version": APP_VERSION,
+                }
+                if isinstance(debug, dict) and "table_rows" in debug:
+                    payload["table_rows"] = debug["table_rows"]
+                return JSONResponse(payload)
 
             excel_bytes = saved_path.read_bytes()
             download_name = quote(saved_path.name)
