@@ -68,8 +68,31 @@ class ScheduleParser:
             raise ValueError("OCR 沒有讀到任何內容，請確認圖片清晰且完整。")
         return results
 
+    def _parse_ocr_item(self, item) -> Tuple[Sequence[Sequence[float]], str, float]:
+        if not isinstance(item, (list, tuple)) or len(item) < 3:
+            raise ValueError("OCR 回傳格式不正確。")
+
+        first, second, third = item[0], item[1], item[2]
+
+        if isinstance(second, str):
+            box = first
+            text = second
+            score_raw = third
+        else:
+            box = first
+            text = third
+            score_raw = second
+
+        try:
+            score = float(score_raw)
+        except Exception:
+            score = 0.0
+
+        return box, str(text), score
+
     def _extract_year_month(self, ocr_results) -> Tuple[int, int]:
-        for _, text, _ in ocr_results:
+        for item in ocr_results:
+            _, text, _ = self._parse_ocr_item(item)
             match = re.search(r"(\d{4})\s*/\s*(\d{1,2})", self._normalize_text(text))
             if match:
                 return int(match.group(1)), int(match.group(2))
@@ -132,7 +155,8 @@ class ScheduleParser:
     ) -> Dict[Tuple[int, int], date]:
         date_cells: Dict[Tuple[int, int], date] = {}
 
-        for box, text, score in ocr_results:
+        for item in ocr_results:
+            box, text, score = self._parse_ocr_item(item)
             if score < 0.7:
                 continue
 
@@ -167,7 +191,8 @@ class ScheduleParser:
         target_name = self._normalize_name(employee_name)
         records: List[ShiftRecord] = []
 
-        for box, text, score in ocr_results:
+        for item in ocr_results:
+            box, text, score = self._parse_ocr_item(item)
             if score < 0.72:
                 continue
 
