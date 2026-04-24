@@ -15,7 +15,7 @@ from schedule_core import records_to_dicts, run_conversion_debug
 from schedule_excel_parser import run_excel_conversion_debug
 
 
-APP_VERSION = "excel-source-v1"
+APP_VERSION = "excel-source-v2-headerfix"
 
 
 app = FastAPI(title="班表圖片轉 Excel")
@@ -212,7 +212,7 @@ HTML_PAGE = """<!doctype html>
         method: "POST",
         headers: {
           "Content-Type": file.type || "application/octet-stream",
-          "X-Filename": file.name,
+          "X-Filename": encodeURIComponent(file.name),
         },
         body: await file.arrayBuffer(),
       });
@@ -304,7 +304,13 @@ async def convert(
         raise HTTPException(status_code=400, detail="沒有收到圖片內容。")
 
     filename_header = request.headers.get("X-Filename", "schedule.jpg")
-    safe_original_name = Path(filename_header).name or "schedule.jpg"
+    safe_original_name = Path(request.headers.get("X-Filename", "schedule.jpg")).name or "schedule.jpg"
+    try:
+        from urllib.parse import unquote
+
+        safe_original_name = Path(unquote(filename_header)).name or safe_original_name
+    except Exception:
+        pass
     suffix = Path(safe_original_name).suffix or ".jpg"
 
     try:
