@@ -11,7 +11,10 @@ import uvicorn
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 
-from schedule_core import default_output_path, records_to_dicts, run_conversion
+from schedule_core import default_output_path, records_to_dicts, run_conversion_debug
+
+
+APP_VERSION = "debug-preview-v1"
 
 
 app = FastAPI(title="班表圖片轉 Excel")
@@ -135,6 +138,12 @@ HTML_PAGE = """<!doctype html>
       gap: 12px;
       flex-wrap: wrap;
     }
+    .debug {
+      margin-top: 12px;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.7;
+    }
   </style>
 </head>
 <body>
@@ -166,6 +175,7 @@ HTML_PAGE = """<!doctype html>
       <h2>辨識結果預覽</h2>
       <p id="previewCount" class="count"></p>
       <div id="previewList" class="preview-list"></div>
+      <div id="debugInfo" class="debug"></div>
       <div class="download-row">
         <button id="downloadBtn" type="button" class="secondary">確認並下載 Excel</button>
       </div>
@@ -182,6 +192,7 @@ HTML_PAGE = """<!doctype html>
     const previewBox = document.getElementById("previewBox");
     const previewCount = document.getElementById("previewCount");
     const previewList = document.getElementById("previewList");
+    const debugInfo = document.getElementById("debugInfo");
 
     async function sendRequest(mode) {
       const file = imageInput.files[0];
@@ -255,6 +266,9 @@ HTML_PAGE = """<!doctype html>
           previewList.appendChild(item);
         }
 
+        const debug = data.debug || {};
+        debugInfo.textContent = `版本：${data.version} ｜ OCR先抓到：${debug.ocr_direct_matches ?? "-"} ｜ 顏色補抓：${debug.color_fallback_matches ?? "-"} ｜ 總筆數：${debug.deduped_total ?? data.count}`;
+
         previewBox.hidden = false;
         status.className = "status ok";
         status.textContent = "已完成預覽，請確認班次內容。";
@@ -298,10 +312,17 @@ async def convert(
             input_path = temp_path / f"upload{suffix}"
             output_path = default_output_path(input_path, name)
             input_path.write_bytes(raw)
-            saved_path, records = run_conversion(input_path, name, output_path)
+            saved_path, records, debug = run_conversion_debug(input_path, name, output_path)
 
             if mode == "preview":
-                return JSONResponse({"count": len(records), "records": records_to_dicts(records)})
+                return JSONResponse(
+                    {
+                        "count": len(records),
+                        "records": records_to_dicts(records),
+                        "debug": debug,
+                        "version": APP_VERSION,
+                    }
+                )
 
             excel_bytes = saved_path.read_bytes()
             download_name = quote(saved_path.name)

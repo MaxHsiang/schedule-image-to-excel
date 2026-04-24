@@ -47,6 +47,7 @@ class ShiftRecord:
 class ScheduleParser:
     def __init__(self) -> None:
         self.ocr = RapidOCR()
+        self.last_debug: dict = {}
 
     def parse(self, image_path: Path, employee_name: str) -> List[ShiftRecord]:
         image_path = Path(image_path)
@@ -190,6 +191,8 @@ class ScheduleParser:
     ) -> List[ShiftRecord]:
         target_name = self._normalize_name(employee_name)
         records: List[ShiftRecord] = []
+        direct_records = 0
+        fallback_records = 0
         matched_cells = set()
         occupied_cells: Dict[Tuple[int, int], str] = {}
         target_samples: List[Tuple[float, float, float]] = []
@@ -229,6 +232,7 @@ class ScheduleParser:
                     hours=SHIFT_HOURS[shift],
                 )
             )
+            direct_records += 1
             matched_cells.add((cell_row, cell_col))
 
             sample = self._cell_mean_bgr(image, cell_row, cell_col, verticals, horizontals)
@@ -261,6 +265,7 @@ class ScheduleParser:
                                 hours=SHIFT_HOURS[shift],
                             )
                         )
+                        fallback_records += 1
                         matched_cells.add(key)
 
         if not records:
@@ -272,6 +277,15 @@ class ScheduleParser:
 
         final_records = list(dedup.values())
         final_records.sort(key=lambda item: (item.year, item.month, item.day, SHIFT_ORDER[item.shift]))
+        self.last_debug = {
+            "target_name": target_name,
+            "date_cells": len(date_cells),
+            "ocr_direct_matches": direct_records,
+            "color_fallback_matches": fallback_records,
+            "deduped_total": len(final_records),
+            "target_sample_count": len(target_samples),
+            "occupied_name_cells": len(occupied_cells),
+        }
         return final_records
 
     def _cell_mean_bgr(
@@ -437,6 +451,18 @@ def run_conversion(
     final_output = output_path or default_output_path(Path(image_path), employee_name)
     saved_path = export_to_excel(records=records, employee_name=employee_name, output_path=final_output)
     return saved_path, records
+
+
+def run_conversion_debug(
+    image_path: Path,
+    employee_name: str,
+    output_path: Path | None = None,
+) -> Tuple[Path, List[ShiftRecord], dict]:
+    parser = ScheduleParser()
+    records = parser.parse(image_path=image_path, employee_name=employee_name)
+    final_output = output_path or default_output_path(Path(image_path), employee_name)
+    saved_path = export_to_excel(records=records, employee_name=employee_name, output_path=final_output)
+    return saved_path, records, parser.last_debug
 
 
 def records_to_dicts(records: Sequence[ShiftRecord]) -> List[dict]:
