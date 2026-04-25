@@ -16,7 +16,7 @@ from schedule_excel_parser import run_excel_conversion_debug
 from schedule_text_parser import run_text_conversion_debug
 
 
-APP_VERSION = "excel-text-v1"
+APP_VERSION = "excel-text-v2-image-beta"
 
 
 app = FastAPI(title="班表圖片轉 Excel")
@@ -180,11 +180,12 @@ HTML_PAGE = """<!doctype html>
 <body>
   <main class="card">
     <h1>班表圖片轉 Excel</h1>
-    <p>上傳班表圖片後，系統會自動抓出指定員工的個人班表。你可以先預覽辨識結果，再決定是否下載 Excel。</p>
+    <p>目前最穩定的方式是上傳 Excel，或直接貼上從 Excel 複製的班表文字。圖片分析功能仍為測試版，筆數可能不完全準確。</p>
 
     <div class="grid">
       <label>
-        上傳班表圖片
+        上傳班表檔案
+        <span class="hint">支援圖片或 Excel。圖片分析目前為測試版，建議優先使用 Excel。</span>
         <input id="imageInput" type="file" accept=".png,.jpg,.jpeg,.bmp,.xlsx">
       </label>
 
